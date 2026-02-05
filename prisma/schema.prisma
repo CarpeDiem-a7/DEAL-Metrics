@@ -1,0 +1,578 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ========== AUTH & USER MODELS ==========
+
+model User {
+  id                    String          @id @default(cuid())
+  email                 String          @unique
+  name                  String?
+  phone                 String?
+  password              String?         // For email/password login
+  emailVerified         DateTime?
+  image                 String?
+  
+  // Subscription
+  subscription          Subscription?
+  subscriptionId        String?
+  subscriptionStatus    String          @default("inactive") // inactive, active, expired, cancelled
+  subscriptionPlan      String          @default("free") // free, pro, enterprise
+  subscriptionStartDate DateTime?
+  subscriptionEndDate   DateTime?
+  
+  // Extension & Web Sync
+  extensionInstalled    Boolean         @default(false)
+  extensionId           String?         @unique
+  apiKey                String?         @unique // For extension auth
+  
+  // Affiliate
+  affiliateId           String?         @unique
+  affiliateBalance      Float           @default(0) // In ₹
+  affiliatePaid         Float           @default(0)
+  
+  // Privacy & Preferences
+  notificationEmail     Boolean         @default(true)
+  notificationWhatsapp  Boolean         @default(false)
+  notificationPush      Boolean         @default(true)
+  preferredLanguage     String          @default("en") // en, hi
+  darkMode              Boolean         @default(false)
+  marketingConsent      Boolean         @default(false)
+  
+  // Tracking
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  lastLoginAt           DateTime?
+  
+  // Relations
+  accounts              Account[]
+  sessions              Session[]
+  savedProducts         SavedProduct[]
+  priceAlerts           PriceAlert[]
+  clickLogs             ClickLog[]
+  notifications         Notification[]
+  extensionEvents       ExtensionEvent[]
+  reviews               Review[]
+  
+  @@index([email])
+  @@index([affiliateId])
+  @@index([subscriptionStatus])
+}
+
+model Account {
+  id                 String  @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String?  @db.Text
+  access_token       String?  @db.Text
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String?  @db.Text
+  session_state      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Subscription {
+  id                  String    @id @default(cuid())
+  userId              String    @unique
+  razorpayOrderId     String?
+  razorpayPaymentId   String?
+  razorpaySubId       String?   @unique
+  planId              String    // free, pro_199, pro_499, enterprise
+  status              String    @default("inactive")
+  startDate           DateTime  @default(now())
+  endDate             DateTime?
+  autoRenew           Boolean   @default(true)
+  totalAmount         Float
+  currency            String    @default("INR")
+  paymentMethod       String?   // card, upi, netbanking
+  
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([razorpaySubId])
+  @@index([status])
+}
+
+// ========== PRODUCT & PRICE MODELS ==========
+
+model Category {
+  id          String      @id @default(cuid())
+  name        String      @unique
+  slug        String      @unique
+  description String?
+  icon        String?
+  image       String?
+  parentId    String?     // For subcategories
+  
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  
+  products    Product[]
+  parent      Category?   @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children    Category[]  @relation("CategoryHierarchy")
+  
+  @@index([slug])
+}
+
+model Product {
+  id              String        @id @default(cuid())
+  title           String
+  slug            String        @unique
+  description     String?       @db.Text
+  imageUrl        String?
+  categoryId      String
+  brand           String?
+  rating          Float?        @default(0)
+  reviewCount     Int           @default(0)
+  productType     String        // electronics, fashion, grocery, beauty, home, etc.
+  
+  // Price tracking
+  minPrice        Float
+  maxPrice        Float
+  lowestEverPrice Float?
+  
+  // SEO
+  metaTitle       String?
+  metaDescription String?
+  metaKeywords    String?
+  
+  // Moderation
+  verified        Boolean       @default(false)
+  flagged         Boolean       @default(false)
+  flagReason      String?
+  
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  
+  category        Category      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  prices          Price[]
+  offers          Offer[]
+  savedBy         SavedProduct[]
+  alerts          PriceAlert[]
+  reviews         Review[]
+  affiliateLinks  AffiliateLink[]
+  comparisons     ProductComparison[]
+  
+  @@index([categoryId])
+  @@index([slug])
+  @@index([verified])
+  @@fulltext([title, description, brand])
+}
+
+model Store {
+  id              String    @id @default(cuid())
+  name            String    @unique // amazon, flipkart, myntra, ajio, meesho, tata_cliq, croma, reliance, nykaa, firstcry
+  displayName     String
+  logo            String?
+  website         String
+  affiliateProgram Boolean   @default(true)
+  affiliateUrl    String?
+  commissionRate  Float     @default(0) // percentage
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  prices          Price[]
+  offers          Offer[]
+  affiliateLinks  AffiliateLink[]
+  
+  @@index([name])
+}
+
+model Price {
+  id              String    @id @default(cuid())
+  productId       String
+  storeId         String
+  price           Float
+  originalPrice   Float?
+  discount        Float?    @default(0) // percentage
+  inStock         Boolean   @default(true)
+  url             String
+  
+  // Historical tracking (time-series)
+  recordedAt      DateTime  @default(now())
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  product         Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  store           Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  
+  @@unique([productId, storeId, recordedAt])
+  @@index([productId])
+  @@index([storeId])
+  @@index([recordedAt])
+  @@index([price])
+}
+
+model BankOffer {
+  id              String    @id @default(cuid())
+  title           String
+  description     String    @db.Text
+  offerType       String    // discount, cashback, reward_points, emi, flat_off
+  discountPercent Float?
+  discountAmount  Float?
+  maxDiscount     Float?
+  
+  banks           String[]  // ["HDFC", "ICICI", "AXIS"]
+  cardTypes       String[]  // ["credit", "debit", "both"]
+  paymentMethods  String[]  // ["card", "upi", "emi"]
+  
+  stores          String[]  // applicable stores
+  categories      String[]  // applicable categories
+  
+  validFrom       DateTime
+  validTill       DateTime
+  termsUrl        String?
+  priority        Int       @default(0)
+  
+  active          Boolean   @default(true)
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  @@index([active])
+  @@index([validTill])
+}
+
+model Coupon {
+  id              String    @id @default(cuid())
+  code            String    @unique
+  title           String
+  description     String?   @db.Text
+  
+  discountType    String    // percentage, fixed, freeShipping
+  discountValue   Float
+  maxDiscount     Float?
+  minCartValue    Float?
+  
+  applicableStores String[]
+  applicableCategories String[]
+  
+  usageLimit      Int?      // total usages allowed
+  usagePerUser    Int?      @default(1)
+  usedCount       Int       @default(0)
+  
+  validFrom       DateTime
+  validTill       DateTime
+  
+  active          Boolean   @default(true)
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  @@index([code])
+  @@index([active])
+  @@index([validTill])
+}
+
+model AffiliateLink {
+  id              String    @id @default(cuid())
+  productId       String
+  storeId         String
+  
+  affiliateUrl    String    @unique @db.Text
+  affiliateTag    String
+  commissionRate  Float     // %
+  
+  clicks          Int       @default(0)
+  conversions     Int       @default(0)
+  revenue         Float     @default(0) // in ₹
+  
+  validFrom       DateTime  @default(now())
+  validTill       DateTime?
+  active          Boolean   @default(true)
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  product         Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  store           Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  clickLogs       ClickLog[]
+  
+  @@unique([productId, storeId])
+  @@index([productId])
+  @@index([storeId])
+}
+
+model ClickLog {
+  id              String    @id @default(cuid())
+  userId          String
+  affiliateLinkId String
+  
+  referer         String?
+  userAgent       String?
+  ipAddress       String?
+  
+  converted       Boolean   @default(false)
+  conversionValue Float?
+  
+  createdAt       DateTime  @default(now())
+  
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  affiliateLink   AffiliateLink @relation(fields: [affiliateLinkId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([affiliateLinkId])
+  @@index([createdAt])
+}
+
+// ========== ALERT & NOTIFICATION MODELS ==========
+
+model PriceAlert {
+  id              String    @id @default(cuid())
+  userId          String
+  productId       String
+  
+  targetPrice     Float     // Alert when price drops below this
+  alertType       String    @default("below") // below, drop_percentage, price_match
+  dropPercentage  Float?    // e.g., 20 for 20% drop
+  
+  isActive        Boolean   @default(true)
+  notified        Boolean   @default(false)
+  notificationSentAt DateTime?
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product         Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, productId])
+  @@index([userId])
+  @@index([productId])
+  @@index([isActive])
+}
+
+model Notification {
+  id              String    @id @default(cuid())
+  userId          String
+  
+  type            String    // price_alert, new_deal, offer, system
+  title           String
+  message         String    @db.Text
+  link            String?
+  
+  read            Boolean   @default(false)
+  sentVia         String[]  // ["email", "push", "whatsapp"]
+  sentAt          DateTime  @default(now())
+  
+  createdAt       DateTime  @default(now())
+  
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([read])
+  @@index([createdAt])
+}
+
+// ========== SAVINGS & WISHLIST ==========
+
+model SavedProduct {
+  id              String    @id @default(cuid())
+  userId          String
+  productId       String
+  
+  list            String    @default("wishlist") // wishlist, comparison, buying_soon
+  
+  createdAt       DateTime  @default(now())
+  
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product         Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, productId, list])
+  @@index([userId])
+  @@index([list])
+}
+
+model ProductComparison {
+  id              String    @id @default(cuid())
+  productId       String
+  
+  // Comparison metrics
+  feature         String
+  value           String    @db.Text
+  
+  createdAt       DateTime  @default(now())
+  
+  product         Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  
+  @@index([productId])
+}
+
+model Offer {
+  id              String    @id @default(cuid())
+  productId       String
+  storeId         String
+  
+  title           String
+  description     String?   @db.Text
+  offerType       String    // bundle, discount, gift
+  
+  validFrom       DateTime
+  validTill       DateTime
+  active          Boolean   @default(true)
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  product         Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  store           Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  
+  @@index([productId])
+  @@index([storeId])
+}
+
+// ========== REVIEWS & RATINGS ==========
+
+model Review {
+  id              String    @id @default(cuid())
+  productId       String
+  userId          String
+  
+  rating          Int       // 1-5
+  title           String
+  comment         String?   @db.Text
+  
+  helpful         Int       @default(0)
+  verified        Boolean   @default(false) // User purchased from our platform
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  product         Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([productId, userId])
+  @@index([productId])
+  @@index([rating])
+}
+
+// ========== EXTENSION & ANALYTICS ==========
+
+model ExtensionEvent {
+  id              String    @id @default(cuid())
+  userId          String
+  
+  eventType       String    // install, uninstall, comparison_viewed, price_checked, click, alert_set
+  productUrl      String?
+  productTitle    String?
+  storeName       String?
+  
+  metadata        String?   @db.Json
+  
+  createdAt       DateTime  @default(now())
+  
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([eventType])
+  @@index([createdAt])
+}
+
+// ========== CONTENT & SEO ==========
+
+model BlogPost {
+  id              String    @id @default(cuid())
+  title           String
+  slug            String    @unique
+  content         String    @db.Text
+  excerpt         String?
+  
+  metaTitle       String?
+  metaDescription String?
+  metaKeywords    String[]
+  
+  author          String
+  featured        Boolean   @default(false)
+  published       Boolean   @default(false)
+  
+  publishedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  @@index([slug])
+  @@index([published])
+}
+
+model PageContent {
+  id              String    @id @default(cuid())
+  pageSlug        String    @unique // home, comparison, offers, about, privacy, terms
+  title           String
+  content         String    @db.Text
+  
+  metaTitle       String?
+  metaDescription String?
+  
+  publishedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  @@index([pageSlug])
+}
+
+// ========== ADMIN & MODERATION ==========
+
+model AdminLog {
+  id              String    @id @default(cuid())
+  adminId         String
+  action          String    // product_approved, product_flagged, offer_updated, user_banned
+  entityType      String
+  entityId        String
+  details         String?   @db.Json
+  
+  createdAt       DateTime  @default(now())
+  
+  @@index([adminId])
+  @@index([entityType])
+  @@index([createdAt])
+}
+
+// ========== RATE LIMIT & SECURITY ==========
+
+model RateLimit {
+  id              String    @id @default(cuid())
+  identifier      String    // IP or User ID
+  endpoint        String
+  count           Int       @default(1)
+  resetAt         DateTime
+  
+  @@unique([identifier, endpoint])
+  @@index([resetAt])
+}

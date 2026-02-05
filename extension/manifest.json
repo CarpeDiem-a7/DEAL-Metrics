@@ -1,0 +1,66 @@
+{
+  "manifest_version": 3,
+  "name": "DealHub - Find Best Deals in India",
+  "version": "1.0.0",
+  "description": "Compare prices across Amazon, Flipkart, Myntra and more. Get instant alerts and earn with affiliate links.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "tabs",
+    "webRequest",
+    "cookies",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "https://*.amazon.in/*",
+    "https://*.flipkart.com/*",
+    "https://*.myntra.com/*",
+    "https://*.ajio.com/*",
+    "https://*.meesho.com/*",
+    "https://*.tataccliq.com/*",
+    "https://*.croma.com/*",
+    "https://*.nykaa.com/*",
+    "https://*.firstcry.com/*",
+    "https://www.reliance.com/*",
+    "https://dealhub.in/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "action": {
+    "default_popup": "src/popup.html",
+    "default_title": "DealHub - Find Best Prices"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.amazon.in/*",
+        "https://*.flipkart.com/*",
+        "https://*.myntra.com/*",
+        "https://*.ajio.com/*",
+        "https://*.meesho.com/*",
+        "https://*.tataccliq.com/*",
+        "https://*.croma.com/*",
+        "https://*.nykaa.com/*",
+        "https://*.firstcry.com/*",
+        "https://www.reliance.com/*"
+      ],
+      "js": ["src/contentScript.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "icons": {
+    "16": "images/icon-16.png",
+    "48": "images/icon-48.png",
+    "128": "images/icon-128.png"
+  },
+  "action": {
+    "default_popup": "src/popup.html",
+    "default_icon": {
+      "16": "images/icon-16.png",
+      "48": "images/icon-48.png",
+      "128": "images/icon-128.png"
+    }
+  }
+}
